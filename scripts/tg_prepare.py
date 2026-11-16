@@ -43,6 +43,42 @@ def make_caption(md, date):
     return caption
 
 
+SPECIAL_LINE = re.compile(r"^(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||<|!\[|```)")
+
+
+def normalize_rich(md):
+    """Make the digest render in Telegram the way it reads in the file.
+
+    Telegram's Rich Markdown follows GFM, so without this:
+      * lines starting with "•" melt into one paragraph (soft line breaks),
+      * a line that is only "#tools" turns into a heading instead of a hashtag,
+      * "**+** ..." and "**−** ..." on adjacent lines end up on one line.
+    """
+    lines, in_code = [], False
+    for line in md.split("\n"):
+        if line.startswith("```"):
+            in_code = not in_code
+        elif not in_code:
+            if line.startswith("• "):
+                line = "- " + line[2:]
+            if re.fullmatch(r"#[A-Za-z0-9_]+", line.strip()):
+                line = "\\" + line.strip()
+        lines.append(line)
+
+    out, in_code = [], False
+    for i, line in enumerate(lines):
+        if line.startswith("```"):
+            in_code = not in_code
+            out.append(line)
+            continue
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        if (not in_code and line.strip() and nxt.strip()
+                and not SPECIAL_LINE.match(line) and not SPECIAL_LINE.match(nxt)):
+            line = line.rstrip() + "  "  # GFM hard line break
+        out.append(line)
+    return "\n".join(out)
+
+
 def count_blocks(md):
     """Conservative estimate: every non-empty line outside code fences is a block."""
     blocks, in_code = 0, False
@@ -79,7 +115,7 @@ def split_rich(md, date):
             buf, section = [], line
             continue
         buf.append(line)
-        if not in_code and re.fullmatch(r"#[a-z]+", line.strip()):
+        if not in_code and re.fullmatch(r"\\?#[A-Za-z0-9_]+", line.strip()):
             units.append((section, "\n".join(buf).strip()))
             buf = []
     if "\n".join(buf).strip():
@@ -103,7 +139,7 @@ def split_rich(md, date):
 
 
 def inline_html(text):
-    text = html.unescape(text.replace("\\$", "$"))
+    text = html.unescape(text.replace("\\$", "$").replace("\\#", "#")).rstrip()
     codes = []
 
     def keep(m):
@@ -176,7 +212,7 @@ def main():
     md = open(src, encoding="utf-8").read().strip() + "\n"
     m = re.search(r"(\d{4}-\d{2}-\d{2})", os.path.basename(src))
     date = m.group(1) if m else ""
-    parts = split_rich(md, date)
+    parts = split_rich(normalize_rich(md), date)
     with open(os.path.join(out, "caption.txt"), "w", encoding="utf-8") as f:
         f.write(make_caption(md, date))
     with open(os.path.join(out, "parts.json"), "w", encoding="utf-8") as f:
