@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./scripts/publish-telegram.sh *)",
+      "Bash(git push -u origin claude/*)",
+      "WebFetch",
+      "WebSearch"
+    ]
+  }
+}
